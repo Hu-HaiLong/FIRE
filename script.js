@@ -1,4 +1,5 @@
 let pieChart = null; 
+let historyRecords = [];
 
 // 主题切换功能
 const themeToggle = document.getElementById('themeToggle');
@@ -23,7 +24,28 @@ themeToggle.addEventListener('click', () => {
     }
 });
 
+// 加载历史记录
+function loadHistory() {
+    const saved = localStorage.getItem('portfolioHistory');
+    if (saved) {
+        historyRecords = JSON.parse(saved);
+        updateHistoryDisplay();
+        updatePerformanceStats();
+    }
+}
+
+// 保存历史记录
+function saveHistory() {
+    localStorage.setItem('portfolioHistory', JSON.stringify(historyRecords));
+}
+
+// 初始化
 document.getElementById('calculate').addEventListener('click', calculatePortfolio);
+document.getElementById('saveRecord').addEventListener('click', saveCurrentRecord);
+document.getElementById('exportCSV').addEventListener('click', exportToCSV);
+document.getElementById('clearHistory').addEventListener('click', clearHistory);
+
+loadHistory();
 
 // 监听输入框回车键
 document.querySelectorAll('input[type="number"]').forEach(input => {
@@ -219,4 +241,170 @@ function generateRebalancePlan(assets, total) {
         `;
         tbody.innerHTML += row;
     });
+}
+
+// 保存当前记录
+function saveCurrentRecord() {
+    const stock = parseFloat(document.getElementById('stock').value) || 0;
+    const bond = parseFloat(document.getElementById('bond').value) || 0;
+    const gold = parseFloat(document.getElementById('gold').value) || 0;
+    const cash = parseFloat(document.getElementById('cash').value) || 0;
+
+    const total = stock + bond + gold + cash;
+
+    if (total === 0) {
+        alert('请输入至少一项资产金额');
+        return;
+    }
+
+    const record = {
+        date: new Date().toISOString(),
+        stock,
+        bond,
+        gold,
+        cash,
+        total
+    };
+
+    historyRecords.push(record);
+    saveHistory();
+    updateHistoryDisplay();
+    updatePerformanceStats();
+
+    alert('✓ 记录已保存');
+}
+
+// 更新历史记录显示
+function updateHistoryDisplay() {
+    const historyTable = document.getElementById('historyTable');
+    const noHistory = document.getElementById('noHistory');
+    const historyBody = document.getElementById('historyBody');
+
+    if (historyRecords.length === 0) {
+        historyTable.style.display = 'none';
+        noHistory.style.display = 'block';
+        return;
+    }
+
+    historyTable.style.display = 'table';
+    noHistory.style.display = 'none';
+    historyBody.innerHTML = '';
+
+    // 按日期倒序排列
+    const sortedRecords = [...historyRecords].reverse();
+
+    sortedRecords.forEach((record, index) => {
+        const actualIndex = historyRecords.length - 1 - index;
+        const date = new Date(record.date);
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+        
+        // 计算收益率（相对于第一条记录）
+        let returnRate = 0;
+        let returnClass = '';
+        if (historyRecords.length > 0 && actualIndex > 0) {
+            const initialTotal = historyRecords[0].total;
+            returnRate = ((record.total - initialTotal) / initialTotal * 100).toFixed(2);
+            returnClass = returnRate >= 0 ? 'positive-return' : 'negative-return';
+        }
+
+        const row = `
+            <tr>
+                <td>${dateStr}</td>
+                <td>¥${record.total.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</td>
+                <td>¥${record.stock.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</td>
+                <td>¥${record.bond.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</td>
+                <td>¥${record.gold.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</td>
+                <td>¥${record.cash.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</td>
+                <td class="${returnClass}">${actualIndex === 0 ? '-' : returnRate + '%'}</td>
+                <td><button class="btn-delete" onclick="deleteRecord(${actualIndex})">删除</button></td>
+            </tr>
+        `;
+        historyBody.innerHTML += row;
+    });
+}
+
+// 更新收益统计
+function updatePerformanceStats() {
+    const statsDiv = document.getElementById('performanceStats');
+    
+    if (historyRecords.length === 0) {
+        statsDiv.style.display = 'none';
+        return;
+    }
+
+    statsDiv.style.display = 'grid';
+
+    const initialAmount = historyRecords[0].total;
+    const currentAmount = historyRecords[historyRecords.length - 1].total;
+    const totalReturn = currentAmount - initialAmount;
+    const returnRate = ((totalReturn / initialAmount) * 100).toFixed(2);
+
+    document.getElementById('initialAmount').textContent = `¥${initialAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`;
+    document.getElementById('currentAmount').textContent = `¥${currentAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`;
+    
+    const totalReturnEl = document.getElementById('totalReturn');
+    totalReturnEl.textContent = `¥${Math.abs(totalReturn).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`;
+    totalReturnEl.className = 'stat-value ' + (totalReturn >= 0 ? 'positive-return' : 'negative-return');
+    
+    const returnRateEl = document.getElementById('returnRate');
+    returnRateEl.textContent = `${returnRate}%`;
+    returnRateEl.className = 'stat-value ' + (returnRate >= 0 ? 'positive-return' : 'negative-return');
+}
+
+// 删除记录
+function deleteRecord(index) {
+    if (confirm('确定要删除这条记录吗？')) {
+        historyRecords.splice(index, 1);
+        saveHistory();
+        updateHistoryDisplay();
+        updatePerformanceStats();
+    }
+}
+
+// 清空历史记录
+function clearHistory() {
+    if (confirm('确定要清空所有历史记录吗？此操作不可恢复！')) {
+        historyRecords = [];
+        saveHistory();
+        updateHistoryDisplay();
+        updatePerformanceStats();
+    }
+}
+
+// 导出CSV
+function exportToCSV() {
+    if (historyRecords.length === 0) {
+        alert('暂无数据可导出');
+        return;
+    }
+
+    // CSV表头
+    let csv = '日期,总资产,股票,债券,黄金,现金,收益率\n';
+
+    // CSV数据
+    historyRecords.forEach((record, index) => {
+        const date = new Date(record.date);
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+        
+        let returnRate = '-';
+        if (index > 0) {
+            const initialTotal = historyRecords[0].total;
+            returnRate = ((record.total - initialTotal) / initialTotal * 100).toFixed(2) + '%';
+        }
+
+        csv += `${dateStr},${record.total},${record.stock},${record.bond},${record.gold},${record.cash},${returnRate}\n`;
+    });
+
+    // 创建下载链接
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `永久投资组合记录_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
